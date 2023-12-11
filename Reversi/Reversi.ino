@@ -7,7 +7,7 @@
 Adafruit_TFTLCD tft(LCD_CS, LCD_CD, LCD_WR, LCD_RD, LCD_RESET);
 TouchScreen ts = TouchScreen(XP, YP, XM, YM, 300);
 
-char *version = "version 1.0";
+char *version = "version 1.1";
 char Board[8][8] = {{-1, -1, -1, -1, -1, -1, -1, -1}, 
                     {-1, -1, -1, -1, -1, -1, -1, -1}, 
                     {-1, -1, -1, -1, -1, -1, -1, -1}, 
@@ -97,7 +97,7 @@ void loop()
             break;
             
             case 3:
-            MessageBox("Pass", 4, 1);
+            MessageBox("Pass", 4, 0);
             DrawChkBoard();
             DrawChess();
             DrawNWBTN();
@@ -629,7 +629,7 @@ int PassWins(char player_calc)
       if(many1>many0) return 1;
       if(many1==many0) return 2;
     }
-    else return flag;
+    else return 3;
     
   }
   else return flag;
