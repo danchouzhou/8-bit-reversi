@@ -29,8 +29,8 @@
 void StartupScreen();
 int MessageBox(char*, char, char);
 void DrawChkBoard();
-void PutChess();
-void DrawChess();
+void PutChess(char, char, char, char);
+void DrawChess(char);
 void DrawButton(int, int, int, int, char*, char, char, char);
 void DrawNWBTN();
 void NewGame();
@@ -40,8 +40,15 @@ void DrawWhereCan();
 void Gameplay();
 void HowMany(char);
 int PassWins(char);
-
-
+void RefreshP1();
+void RefreshP3();
+void saveBoard(int);
+void callBoard(int);
+int power(int, int);
+void printChess();
+void Undo();
+void EEBITWRITE(int Address, char Bit, unsigned char Value);
+char EEBITREAD(int Address, char Bit);
 
 
 

@@ -1,13 +1,15 @@
 #include <Adafruit_GFX.h>
 #include <Adafruit_TFTLCD.h>
 #include <TouchScreen.h>
+#include <EEPROM.h>
 #include "Reversi.h"
 #include "U16.h"
 
 Adafruit_TFTLCD tft(LCD_CS, LCD_CD, LCD_WR, LCD_RD, LCD_RESET);
 TouchScreen ts = TouchScreen(XP, YP, XM, YM, 300);
 
-char *version = "version 1.1";
+char *version = "version 1.2b";
+                //LSB                            MSB
 char Board[8][8] = {{-1, -1, -1, -1, -1, -1, -1, -1}, 
                     {-1, -1, -1, -1, -1, -1, -1, -1}, 
                     {-1, -1, -1, -1, -1, -1, -1, -1}, 
@@ -17,9 +19,9 @@ char Board[8][8] = {{-1, -1, -1, -1, -1, -1, -1, -1},
                     {-1, -1, -1, -1, -1, -1, -1, -1}, 
                     {-1, -1, -1, -1, -1, -1, -1, -1}};
 char process = 0;
-char player = 0;
-char tsflag = 0;
-char wins = -1;
+char player = 1;
+char hint = 1;
+int cnt0 = 0;
 unsigned long m1 = millis();
 TSPoint p;
 
@@ -48,6 +50,7 @@ void loop()
 /******************************/ //Startup initial
     case 0:
     StartupScreen(version);
+    hint = EEBITREAD(1022, 1);
     NewGame();
     process=1;
     break;
@@ -65,59 +68,46 @@ void loop()
           if(player == 0) player=1;
           else player = 0;
           WhereCan(player);
-          DrawChess();
+          DrawChess(0);
           HowMany(player);
           switch (PassWins(player))
           {
             case 0:
             MessageBox("White wins!", 11, 1);
-            DrawChkBoard();
-            DrawChess();
-            DrawNWBTN();
-            DrawButton(90, 285, 90, 35, "Back", 2, 22, 11);
-            HowMany(player);
+            RefreshP1();
             break;
             
             case 1:
             MessageBox("Black wins!", 11, 1);
-            DrawChkBoard();
-            DrawChess();
-            DrawNWBTN();
-            DrawButton(90, 285, 90, 35, "Back", 2, 22, 11);
-            HowMany(player);
+            RefreshP1();
             break;
             
             case 2:
             MessageBox("Tie.", 4, 1);
-            DrawChkBoard();
-            DrawChess();
-            DrawNWBTN();
-            DrawButton(90, 285, 90, 35, "Back", 2, 22, 11);
-            HowMany(player);
+            RefreshP1();
             break;
             
             case 3:
             MessageBox("Pass", 4, 0);
-            DrawChkBoard();
-            DrawChess();
-            DrawNWBTN();
-            DrawButton(90, 285, 90, 35, "Back", 2, 22, 11);
             if(player == 0) player=1;
             else player = 0;
-            HowMany(player);
-            WhereCan(player);
+            RefreshP1();
             break;
           }
           DrawWhereCan();
+          saveBoard(cnt0);
+          if(cnt0<960) cnt0+=16;
+          Serial.println(cnt0, DEC);
         }
       }
-      else if(p.x>5 && p.y>290 && p.x<85 && p.y<315) //New Game
+      else if(p.x>5 && p.y>290 && p.x<115 && p.y<315) //undo
       {
-        NewGame();
+        Undo();
       }
-      else if(p.x>95 && p.y>290 && p.x<175 && p.y<315) //Back
+      else if(p.x>125 && p.y>290 && p.x<235 && p.y<315) //Back
       {
-        process=2;
+        RefreshP3();
+        process=3;
       }
     }
     break;
@@ -129,9 +119,67 @@ void loop()
     break;
 /******************************/
     case 3:
-    DrawChkBoard();
-    MessageBox("Hello World", 11, 2);
-    process++;
+    if(p.x>20 && p.z>100 && p.x<220 && p.z<1000)
+    {
+      if(p.y>23 && p.y<48) //Hint
+      {
+        if(hint==0)
+        {
+          hint=1;
+          MessageBox("Hint on.", 7, 0);
+        }
+        else
+        {
+          hint=0;
+          MessageBox("Hint off.", 8, 0);
+        }
+        EEBITWRITE(1022, 1, hint);
+        RefreshP1();
+        process=1;
+      }
+      else if(p.y>73 && p.y<98) //New game
+      {
+        if(MessageBox("Sure?", 5, 2)) NewGame();
+        else RefreshP3();
+        process=1;
+      }
+      else if(p.y>123 && p.y<148) //Save game
+      {
+        if(MessageBox("Sure to save?", 13, 2))
+        {
+          saveBoard(977);
+          EEBITWRITE(1022, 0, player);
+          MessageBox("Saved.", 6, 0);
+          RefreshP3();
+        }
+        else RefreshP3();
+      }
+      else if(p.y>173 && p.y<198) //Call game
+      {
+        if(MessageBox("Sure to call?", 13, 2))
+        {
+          player = EEBITREAD(1022, 0);
+          cnt0=0;
+          callBoard(977);
+          saveBoard(cnt0);
+          cnt0+=16;
+          WhereCan(player);
+          RefreshP1();
+          process=1;
+        }
+      }
+      else if(p.y>223 && p.y<248) //Start up screen
+      {
+        if(MessageBox("Sure?", 5, 2)) process=2;
+        else RefreshP3();
+      }
+      else if(p.y>273 && p.y<298) //Back
+      {
+        RefreshP1();
+        process=1;
+      }
+    }
+/******************************/
   }
 }
 
@@ -192,8 +240,8 @@ void StartupScreen(char *ver)
 int MessageBox(char *text, char len, char mode)
 {
   Serial.print(len, DEC);
-  tft.fillRect(45, 75, 150, 105, Navy);
-  tft.fillRect(47, 77, 146, 101, DarkGrey);
+  tft.fillRect(30, 75, 180, 105, Navy);
+  tft.fillRect(32, 77, 176, 101, DarkGrey);
   tft.setCursor(tft.width()/2 - len*6, tft.height()/2 - 56);
   tft.setTextColor(Yellow);
   tft.setTextSize(2);
@@ -214,16 +262,16 @@ int MessageBox(char *text, char len, char mode)
         }
       }
     case 2:
-      DrawButton(61, 143, 56, 24, "Yes", 2, 11, 5);
-      DrawButton(122, 143, 56, 24, "No", 2, 17, 5);
+      DrawButton(53, 143, 56, 24, "Yes", 2, 11, 5);
+      DrawButton(130, 143, 56, 24, "No", 2, 17, 5);
       while(1)
       {
         GetTSPoint();
         if(p.z>100 && p.z<1000)
         {
-          if(p.x>63 && p.y>145 && p.x<115 && p.y<165)
+          if(p.x>58 && p.y>145 && p.x<104 && p.y<165)
             return 1;
-          if(p.x>124 && p.y>145 && p.x<176 && p.y<165)
+          if(p.x>135 && p.y>145 && p.x<181 && p.y<165)
             return 0;
         }
       }
@@ -250,21 +298,26 @@ void DrawChkBoard()
   }
 }
 
-void PutChess(int qx, int qy, int chesscolor)
+void PutChess(char qx, char qy, char chesscolor, char undo)
 {
   if(chesscolor == 0)
     tft.fillCircle(BOXSIZE*qx+BOXSIZE/2, BOXSIZE*qy+BOXSIZE/2, CHESS, White);
   else if(chesscolor == 1)
     tft.fillCircle(BOXSIZE*qx+BOXSIZE/2, BOXSIZE*qy+BOXSIZE/2, CHESS, Black);
+  else if((chesscolor == -1 || chesscolor == 2)&&(undo!=0))
+  {
+    if((qx+qy)%2==1) tft.fillCircle(BOXSIZE*qx+BOXSIZE/2, BOXSIZE*qy+BOXSIZE/2, CHESS, BLOCK2);
+    else tft.fillCircle(BOXSIZE*qx+BOXSIZE/2, BOXSIZE*qy+BOXSIZE/2, CHESS, BLOCK1);
+  }
 }
 
-void DrawChess()
+void DrawChess(char undo)
 {
   for(int i=0; i<8; i++)
   {
     for(int j=0; j<8; j++)
     {
-      PutChess(i, j, Board[j][i]);
+      PutChess(i, j, Board[j][i], undo);
     }
   }
     
@@ -280,18 +333,6 @@ void DrawButton(int x, int y, int size_x, int size_y, char *text, char size_txt,
   tft.print(text);
 }
 
-void DrawNWBTN()
-{
-  tft.fillRect(0, 285, 90, 35, LightGrey);
-  tft.drawRect(0, 285, 90, 35, Yellow);
-  tft.setTextColor(Navy);
-  tft.setCursor(2, 296);
-  tft.setTextSize(2);
-  tft.print("New");
-  tft.setCursor(43, 296);
-  tft.print("Game");
-}
-
 void NewGame()
 {
   for(int i=0; i<8; i++)
@@ -304,22 +345,21 @@ void NewGame()
     }
   }
   player = 1;
-  wins = -1;
+  cnt0=0;
+  saveBoard(cnt0);
+  cnt0+=16;
   DrawChkBoard();
   WhereCan(player);
-  DrawChess();
+  DrawChess(0);
   DrawWhereCan();
   HowMany(player);
-  DrawNWBTN();
-  DrawButton(90, 285, 90, 35, "Back", 2, 22, 11);
-  DrawButton(180, 285, 60, 35, "options", 1, 10, 14);
+  DrawButton(0, 285, 120, 35, "Undo", 2, 37, 11);
+  DrawButton(120, 285, 120, 35, "Options", 2, 19, 11);
 }
 
 void GetTSPoint()
 {
-  digitalWrite(13, HIGH);
   p = ts.getPoint();
-  digitalWrite(13, LOW);
   
   pinMode(XM, OUTPUT);
   pinMode(YP, OUTPUT);
@@ -418,15 +458,13 @@ void DrawWhereCan()
   {
     for(int j=0; j<8; j++)
     {
-      if(Board[j][i]==2) tft.fillCircle(BOXSIZE*i+BOXSIZE/2, BOXSIZE*j+BOXSIZE/2, 6, DarkGrey);
+      if(Board[j][i]==2 && hint==1) tft.fillCircle(BOXSIZE*i+BOXSIZE/2, BOXSIZE*j+BOXSIZE/2, 6, DarkGrey);
       else if(Board[j][i]==-1)
       {
         if((i+j)%2==1) tft.fillCircle(BOXSIZE*i+BOXSIZE/2, BOXSIZE*j+BOXSIZE/2, 6, BLOCK2);
         else tft.fillCircle(BOXSIZE*i+BOXSIZE/2, BOXSIZE*j+BOXSIZE/2, 6, BLOCK1);
       }
-      Serial.print(Board[j][i], DEC);
     }
-    Serial.println();
   }
 }
 
@@ -633,4 +671,138 @@ int PassWins(char player_calc)
     
   }
   else return flag;
+}
+
+void RefreshP1()
+{
+  DrawChkBoard();
+  DrawChess(0);
+  DrawWhereCan();
+  HowMany(player);
+  DrawButton(0, 285, 120, 35, "Undo", 2, 37, 11);
+  DrawButton(120, 285, 120, 35, "Options", 2, 19, 11);
+}
+
+void RefreshP3()
+{
+  tft.fillScreen(BACKGROUND);
+  #define YOFFSET 12
+  DrawButton(15, 30-YOFFSET, 210, 35, "Hint on/off", 2, 41, 11);
+  DrawButton(15, 80-YOFFSET, 210, 35, "New game", 2, 56, 11);
+  DrawButton(15, 130-YOFFSET, 210, 35, "Save game", 2, 51, 11);
+  DrawButton(15, 180-YOFFSET, 210, 35, "Call game", 2, 51, 11);
+  DrawButton(15, 230-YOFFSET, 210, 35, "Start up screen", 2, 15, 11);
+  DrawButton(15, 280-YOFFSET, 210, 35, "Back", 2, 83, 11);
+}
+
+void saveBoard(int start)
+{
+  for(int i=0; i<8; i++)
+  {
+    unsigned char value0 = 0;
+    unsigned char value1 = 0; 
+    for(int j=0; j<8; j++)
+    {
+      if(Board[i][j]==0)
+        value0 += power(2, j);
+      else if(Board[i][j]==1)
+        value1 += power(2, j);
+    }
+    EEPROM.write(start+i*2, value0);
+    EEPROM.write(start+i*2+1, value1);
+  }
+}
+
+void callBoard(int start)
+{
+  for(int i=0; i<8; i++)
+  {
+    unsigned char value0 = EEPROM.read(start+i*2);
+    unsigned char value1 = EEPROM.read(start+i*2+1);
+    for(int j=0; j<8; j++)
+    {
+      if(value0%2==1)
+        Board[i][j]=0;
+      else if(value1%2==1)
+        Board[i][j]=1;
+      else
+        Board[i][j]=-1;
+      value0=value0/2;
+      value1=value1/2;
+    }
+  }
+}
+
+int power(int x, int y)
+{
+  if(y>0)
+  {
+    x = x*power(x, y-1);
+    return x;
+  }
+  else
+  {
+    return 1;
+  }
+}
+
+void printChess()
+{
+  for(int i=0; i<8; i++)
+  {
+    for(int j=0; j<8; j++)
+    {
+      if(Board[i][j]<0) Serial.print(Board[i][j], DEC);
+      else
+      {
+        Serial.print(" ");
+        Serial.print(Board[i][j], DEC);
+      }
+    }
+    Serial.println();
+  }
+  Serial.println();
+}
+
+void Undo()
+{
+  if(cnt0>=32)
+  {
+    cnt0-=32;
+    callBoard(cnt0);
+    if(player == 0) player=1;
+    else player = 0;
+    WhereCan(player);
+    DrawChess(1);
+    if(PassWins(player)==3)
+    {
+      if(player == 0) player=1;
+      else player = 0;
+    }
+    HowMany(player);
+    DrawWhereCan();
+    if(cnt0<960) cnt0+=16;
+  }
+  else
+  {
+    MessageBox("Not available.", 14, 0);
+    RefreshP1();
+  }
+}
+
+void EEBITWRITE(int Address, char Bit, unsigned char Value)
+{
+  unsigned char val = EEPROM.read(Address);
+  if((val/power(2, Bit))%2==1 && Value==0)
+    val-=power(2, Bit);
+  else if((val/power(2, Bit))%2==0 && Value==1)
+    val+=power(2, Bit);
+  EEPROM.write(Address, val);
+}
+
+char EEBITREAD(int Address, char Bit)
+{
+  unsigned char val = EEPROM.read(Address);
+  val = val / power(2, Bit);
+  return val%2;
 }
